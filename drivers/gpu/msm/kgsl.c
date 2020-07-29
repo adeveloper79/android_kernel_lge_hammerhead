@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2013,2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2017 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -188,8 +188,11 @@ kgsl_mem_entry_create(void)
 
 	if (!entry)
 		KGSL_CORE_ERR("kzalloc(%d) failed\n", sizeof(*entry));
-	else
+	else {
 		kref_init(&entry->refcount);
+		/* put this ref in the caller functions after init */
+		kref_get(&entry->refcount);
+	}
 
 	return entry;
 }
@@ -1085,7 +1088,7 @@ int kgsl_open_device(struct kgsl_device *device)
 		if (result)
 			goto err;
 
-		result = device->ftbl->start(device);
+		result = device->ftbl->start(device, 0);
 		if (result)
 			goto err;
 		/*
@@ -2920,6 +2923,9 @@ static long kgsl_ioctl_map_user_mem(struct kgsl_device_private *dev_priv,
 	trace_kgsl_mem_map(entry, param->fd);
 
 	kgsl_mem_entry_commit_process(private, entry);
+
+	/* put the extra refcount for kgsl_mem_entry_create() */
+	kgsl_mem_entry_put(entry);
 	return result;
 
 error_attach:
@@ -3209,6 +3215,9 @@ kgsl_ioctl_gpumem_alloc(struct kgsl_device_private *dev_priv,
 	param->flags = entry->memdesc.flags;
 
 	kgsl_mem_entry_commit_process(private, entry);
+
+	/* put the extra refcount for kgsl_mem_entry_create() */
+	kgsl_mem_entry_put(entry);
 	return result;
 err:
 	kgsl_sharedmem_free(&entry->memdesc);
@@ -3247,6 +3256,9 @@ kgsl_ioctl_gpumem_alloc_id(struct kgsl_device_private *dev_priv,
 	param->gpuaddr = entry->memdesc.gpuaddr;
 
 	kgsl_mem_entry_commit_process(private, entry);
+
+	/* put the extra refcount for kgsl_mem_entry_create() */
+	kgsl_mem_entry_put(entry);
 	return result;
 err:
 	if (entry)
@@ -4233,7 +4245,7 @@ int kgsl_postmortem_dump(struct kgsl_device *device, int manual)
 	del_timer_sync(&device->idle_timer);
 
 	/* Force on the clocks */
-	kgsl_pwrctrl_wake(device);
+	kgsl_pwrctrl_wake(device, 0);
 
 	/* Disable the irq */
 	kgsl_pwrctrl_irq(device, KGSL_PWRFLAGS_OFF);
